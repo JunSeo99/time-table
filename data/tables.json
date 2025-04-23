@@ -1,0 +1,22 @@
+[
+  {
+    "tableNumber": 3,
+    "endDate": "2025-04-23T06:17:23.186Z",
+    "isActive": true
+  },
+  {
+    "tableNumber": 4,
+    "endDate": "2025-04-23T06:17:38.544Z",
+    "isActive": true
+  },
+  {
+    "tableNumber": 7,
+    "endDate": "2025-04-23T06:17:03.622Z",
+    "isActive": true
+  },
+  {
+    "tableNumber": 23,
+    "endDate": "2025-04-23T06:15:16.171Z",
+    "isActive": true
+  }
+]
