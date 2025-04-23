@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { TableState } from '@/types/table';
 import styles from './Table.module.css';
 
@@ -13,85 +13,91 @@ const MAX_EXTENSION = 7 * 60 * 60;
 const EXTENSION_UNIT = 60 * 60;
 
 export default function Table({ tableNumber, initialState, onStateChange }: TableProps) {
-  const [state, setState] = useState<TableState>(initialState);
+  const [isActive, setIsActive] = useState(initialState.isActive);
+  const [remainingTime, setRemainingTime] = useState(initialState.remainingTime);
+  const [endDate, setEndDate] = useState(initialState.endDate);
 
+  // initialState가 변경될 때마다 컴포넌트 상태 업데이트
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    
-    if (state.endDate) {
-      interval = setInterval(() => {
-        const now = new Date().getTime();
-        const end = new Date(state.endDate!).getTime();
-        const remaining = Math.max(0, Math.floor((end - now) / 1000));
-        
-        setState(prev => ({ ...prev, remainingTime: remaining }));
-        
-        if (remaining <= 0) {
-          alert(`테이블 ${tableNumber} 시간이 종료되었습니다!`);
-          handleReset();
-        }
-      }, 1000);
-    }
+    setIsActive(initialState.isActive);
+    setRemainingTime(initialState.remainingTime);
+    setEndDate(initialState.endDate);
+  }, [initialState]);
 
-    return () => clearInterval(interval);
-  }, [state.endDate, tableNumber]);
+  // 타이머 업데이트
+  useEffect(() => {
+    if (!isActive || !endDate) return;
 
-  const formatTime = (seconds: number): string => {
-    const h = String(Math.floor(seconds / 3600)).padStart(2, '0');
-    const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
-    const s = String(seconds % 60).padStart(2, '0');
-    return `${h}:${m}:${s}`;
+    const timer = setInterval(() => {
+      const remaining = Math.max(0, Math.floor((new Date(endDate).getTime() - Date.now()) / 1000));
+      setRemainingTime(remaining);
+
+      if (remaining === 0) {
+        setIsActive(false);
+        setEndDate(null);
+        onStateChange(tableNumber, null);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isActive, endDate, tableNumber, onStateChange]);
+
+  const formatTime = (seconds: number | null) => {
+    if (seconds === null) return '--:--:--';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
   const handleStart = () => {
-    const endDate = new Date(Date.now() + BASE_TIME * 1000).toISOString();
-    setState({ ...state, endDate, isActive: true, remainingTime: BASE_TIME });
-    onStateChange(tableNumber, endDate);
+    const newEndDate = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(); // 2시간
+    setEndDate(newEndDate);
+    setIsActive(true);
+    onStateChange(tableNumber, newEndDate);
   };
 
   const handleExtend = () => {
-    if (!state.endDate || !state.remainingTime) return;
-    
-    const currentRemaining = state.remainingTime;
-    if (currentRemaining >= BASE_TIME + MAX_EXTENSION) return;
-    
-    const newEndDate = new Date(Date.now() + (currentRemaining + EXTENSION_UNIT) * 1000).toISOString();
-    setState({ ...state, endDate: newEndDate });
+    if (!endDate) return;
+    const newEndDate = new Date(new Date(endDate).getTime() + 30 * 60 * 1000).toISOString(); // 30분 연장
+    setEndDate(newEndDate);
     onStateChange(tableNumber, newEndDate);
   };
 
   const handleReset = () => {
-    setState({ ...state, endDate: null, isActive: false, remainingTime: null });
+    setIsActive(false);
+    setRemainingTime(null);
+    setEndDate(null);
     onStateChange(tableNumber, null);
   };
 
   return (
-    <div className={`${styles.tableContainer} ${state.isActive ? styles.active : ''}`}>
-      <h2 className={styles.title}>테이블 {tableNumber}</h2>
-      <div className={styles.timer}>
-        {state.remainingTime !== null ? formatTime(state.remainingTime) : '사용 가능'}
+    <div className={styles.tableContainer}>
+      <h2 className={styles.title}>{tableNumber}번 테이블</h2>
+      <div className={styles.timer}>{formatTime(remainingTime)}</div>
+      <div className={styles.buttonContainer}>
+        <button
+          className={`${styles.button} ${styles.startButton}`}
+          onClick={handleStart}
+          disabled={isActive}
+        >
+          시작
+        </button>
+        <button
+          className={`${styles.button} ${styles.extendButton}`}
+          onClick={handleExtend}
+          disabled={!isActive}
+        >
+          연장
+        </button>
+        <button
+          className={`${styles.button} ${styles.resetButton}`}
+          onClick={handleReset}
+          disabled={!isActive}
+        >
+          초기화
+        </button>
       </div>
-      <button
-        className={styles.startButton}
-        onClick={handleStart}
-        disabled={state.isActive}
-      >
-        시작
-      </button>
-      <button
-        className={styles.extendButton}
-        onClick={handleExtend}
-        disabled={!state.isActive}
-      >
-        +1시간
-      </button>
-      <button
-        className={styles.resetButton}
-        onClick={handleReset}
-        disabled={!state.isActive}
-      >
-        초기화
-      </button>
     </div>
   );
 } 

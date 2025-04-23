@@ -9,30 +9,78 @@ const TOTAL_TABLES = 40;
 
 export default function Home() {
   const [tables, setTables] = useState<TableState[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // 초기 테이블 데이터 로드
-    fetch('/api/tables')
-      .then(res => res.json())
-      .then((data: TableData[]) => {
-        const initialTables = Array.from({ length: TOTAL_TABLES }, (_, i) => {
-          const savedTable = data.find(t => t.tableNumber === i + 1);
+  const loadTableData = async () => {
+    try {
+      const res = await fetch('/api/tables');
+      if (!res.ok) {
+        throw new Error('서버 응답 오류');
+      }
+      const data: TableData[] = await res.json();
+      
+      const currentTime = Date.now();
+      const initialTables = Array.from({ length: TOTAL_TABLES }, (_, i) => {
+        const savedTable = data.find(t => t.tableNumber === i + 1);
+        const endDate = savedTable?.endDate;
+        const remainingTime = endDate
+          ? Math.max(0, Math.floor((new Date(endDate).getTime() - currentTime) / 1000))
+          : null;
+        
+        if (endDate && remainingTime === 0) {
           return {
             tableNumber: i + 1,
-            endDate: savedTable?.endDate || null,
-            isActive: !!savedTable?.endDate,
-            remainingTime: savedTable?.endDate
-              ? Math.max(0, Math.floor((new Date(savedTable.endDate).getTime() - Date.now()) / 1000))
-              : null
+            endDate: null,
+            isActive: false,
+            remainingTime: null
           };
-        });
-        setTables(initialTables);
+        }
+
+        return {
+          tableNumber: i + 1,
+          endDate: savedTable?.endDate || null,
+          isActive: !!savedTable?.endDate,
+          remainingTime
+        };
       });
+
+      const expiredTables = initialTables.some(t => t.endDate && t.remainingTime === 0);
+      if (expiredTables) {
+        const activeTables = initialTables.filter(t => t.endDate && t.remainingTime && t.remainingTime > 0);
+        const updateRes = await fetch('/api/tables', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            activeTables.map(({ tableNumber, endDate, isActive }) => ({
+              tableNumber,
+              endDate,
+              isActive
+            }))
+          )
+        });
+        
+        if (!updateRes.ok) {
+          throw new Error('서버 업데이트 오류');
+        }
+      }
+
+      setTables(initialTables);
+    } catch (error) {
+      console.error('테이블 데이터 로드 중 오류 발생:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTableData();
+    const interval = setInterval(loadTableData, 1000);
+    return () => clearInterval(interval);
   }, []);
 
-  const handleTableStateChange = (tableNumber: number, endDate: string | null) => {
-    setTables(prev => {
-      const newTables = prev.map(table =>
+  const handleTableStateChange = async (tableNumber: number, endDate: string | null) => {
+    try {
+      const newTables = tables.map(table =>
         table.tableNumber === tableNumber
           ? {
               ...table,
@@ -45,8 +93,7 @@ export default function Home() {
           : table
       );
 
-      // 서버에 상태 저장
-      fetch('/api/tables', {
+      const updateRes = await fetch('/api/tables', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
@@ -60,9 +107,21 @@ export default function Home() {
         )
       });
 
-      return newTables;
-    });
+      if (!updateRes.ok) {
+        throw new Error('서버 업데이트 오류');
+      }
+
+      setTables(newTables);
+    } catch (error) {
+      console.error('테이블 상태 업데이트 중 오류 발생:', error);
+      // 오류 발생 시 데이터 다시 로드
+      loadTableData();
+    }
   };
+
+  if (loading) {
+    return <div className={styles.loading}>로딩 중...</div>;
+  }
 
   return (
     <main className={styles.main}>
