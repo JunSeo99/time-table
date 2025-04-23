@@ -1,36 +1,39 @@
+import { createClient } from 'redis';
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import { TableData } from '@/types/table';
 
-const DATA_FILE = path.join(process.cwd(), 'data', 'tables.json');
+const redis = createClient({
+  url: process.env.REDIS_URL || 'redis://localhost:6379'
+});
 
-async function ensureDataFile() {
-  try {
-    await fs.access(path.dirname(DATA_FILE));
-  } catch {
-    await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
+redis.on('error', (err) => console.error('Redis Client Error', err));
+
+async function getRedisClient() {
+  if (!redis.isOpen) {
+    await redis.connect();
   }
-  
-  try {
-    await fs.access(DATA_FILE);
-  } catch {
-    await fs.writeFile(DATA_FILE, JSON.stringify([]));
-  }
+  return redis;
 }
 
 export async function GET() {
-  await ensureDataFile();
-  const data = await fs.readFile(DATA_FILE, 'utf-8');
-  return NextResponse.json(JSON.parse(data));
+  try {
+    const client = await getRedisClient();
+    const data = await client.get('tables');
+    return NextResponse.json(data ? JSON.parse(data) : []);
+  } catch (error) {
+    console.error('테이블 데이터 조회 중 오류 발생:', error);
+    return NextResponse.json([], { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  await ensureDataFile();
-  
-  const tables: TableData[] = body;
-  await fs.writeFile(DATA_FILE, JSON.stringify(tables, null, 2));
-  
-  return NextResponse.json({ success: true });
+  try {
+    const tables: TableData[] = await request.json();
+    const client = await getRedisClient();
+    await client.set('tables', JSON.stringify(tables));
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('테이블 데이터 저장 중 오류 발생:', error);
+    return NextResponse.json({ success: false }, { status: 500 });
+  }
 } 
